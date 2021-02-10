@@ -1,7 +1,6 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <chrono>
 #include <bitset>
 #include <stdlib.h>
 #include "sha-512.h"
@@ -277,7 +276,6 @@ int main(int argc, char** argv)
 	char security_level = strtol(argv[3], NULL, 10); //Level of security
 
 	bytes_read = 0;
-	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	char data[72];
 	char last_sentence[72];
 	char last_data[72];
@@ -370,6 +368,4 @@ int main(int argc, char** argv)
 		}
 
 	}
-	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-	std::cout << std::to_string(security_level) << ": " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() / total_blocks << "ns per block (Average) - " << 1.0/((std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() / total_blocks)/75000.0f) << " MB/s" << std::endl;
 }
