@@ -147,16 +147,16 @@ std::vector<uint8_t> inverse_substitution_table{
 	205,213,95,154,166,209,108,120,85,43,200,130,5,155,83,183
 };
 
+char subtitution_data[72];
 char* substitution(char* data_bytes, bool encoding)
 {
-	char data[72];
 	if (encoding)
 		for (int i = 0; i < 72; i++)
-			data[i] = substitution_table[(uint8_t)data_bytes[i]];
+			subtitution_data[i] = substitution_table[(uint8_t)data_bytes[i]];
 	else
 		for (int i = 0; i < 72; i++)
-			data[i] = inverse_substitution_table[(uint8_t)data_bytes[i]];
-	return data;
+			subtitution_data[i] = inverse_substitution_table[(uint8_t)data_bytes[i]];
+	return subtitution_data;
 }
 
 struct matrix
@@ -268,9 +268,9 @@ int main(int argc, char** argv)
 		memcpy(Salt, buffer, 16);
 	}
 
-	//XOR(argv[1],strlen(argv[1]), Salt, 16, 0); //Mash the password and the salt together
+	XOR(argv[1],strlen(argv[1]), Salt, 16, 0); //Mash the password and the salt together
 	std::string test(argv[1]);
-	test.append(Salt);
+	//test.append(Salt);
 	keys = get_gates(generate_key(test)); //generate keys from password
 	uint8_t* lHash = generate_lHash(keys.bitKey128); //generate lHash
 	char* IV = Generate_IV(generate_key(keys.bitKey128[keys.bitKeyPermutationAmounts[0] % 4]), 64);//Generate the Initilization vector
@@ -314,8 +314,9 @@ int main(int argc, char** argv)
 				XOR(sentence,72, last_data, 72, block_amount);
 				XOR(sentence,72, IV, 16, block_amount);
 			}
+			//Block Cipher
 			for (int i = 0; i < 4; i++) {
-				for (int j = 0; j < std::floor((fmax((1 << (security_level - 1)), keys.bitKeyPermutationAmounts[0] % (1 << security_level)) / fmax(1,(float)(security_level>>1)))); j++)
+				for (int j = 0; j < std::floor((fmax((1 << (security_level - 1)), keys.bitKeyPermutationAmounts[i] % (1 << security_level)) / fmax(1,(float)(security_level>>1)))); j++)
 				{
 					memcpy(sentence, substitution(sentence, true), 72);
 					memcpy(sentence, pass_bytes_through_gates((uint8_t*)keys.bitKeyGates[i], sentence, true), 72);
@@ -328,8 +329,9 @@ int main(int argc, char** argv)
 		else
 		{
 			memcpy(data, sentence, 72);
+			//Block Cipher
 			for (int i = 3; i >= 0; i--) {
-				for (int j = 0; j < std::floor((fmax((1 << (security_level - 1)), keys.bitKeyPermutationAmounts[0] % (1 << security_level)) / fmax(1, (float)(security_level >> 1)))); j++)
+				for (int j = 0; j < std::floor((fmax((1 << (security_level - 1)), keys.bitKeyPermutationAmounts[i] % (1 << security_level)) / fmax(1, (float)(security_level >> 1)))); j++)
 				{
 					rotate(sentence, false, (2 * i) + 2 + (unsigned char)lHash[block_amount % 256]);
 					memcpy(sentence, pass_bytes_through_gates((uint8_t*)keys.bitKeyGates[i], sentence, false), 72);
