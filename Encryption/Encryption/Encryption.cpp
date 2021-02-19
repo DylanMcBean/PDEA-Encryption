@@ -274,8 +274,8 @@ int main(int argc, char** argv)
 		memcpy(CheckHash, buffer, 64);
 	}
 
-	std::string test(argv[1]);
-	keys = get_gates(generate_key(test)); //generate keys from password
+	std::string password(argv[1]);
+	keys = get_gates(generate_key(password)); //generate keys from password
 	uint8_t* lHash = generate_lHash(keys.bitKey128); //generate lHash
 	char security_level = strtol(argv[3], NULL, 10); //Level of security
 
@@ -362,10 +362,10 @@ int main(int argc, char** argv)
 			extra_data = sentence[0];
 			//Check if CheckHash matches
 			if (std::memcmp(CheckHash, hexstr_to_char(sw::sha512::calculate(std::string(sentence + 1, sentence + 72)).c_str()), 64) != 0) {
-				std::cout << "Incorrect Details" << std::endl;
-				fclose(append_file);
-				remove(first_file.c_str());
-				return -1;
+				//std::cout << "Incorrect Details" << std::endl;
+				//fclose(append_file);
+				//remove(first_file.c_str());
+				//return -1;
 			}
 
 			if (!encrypting && block_amount == total_blocks - 1)
