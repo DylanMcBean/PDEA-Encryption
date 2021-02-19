@@ -200,6 +200,16 @@ void XOR(char* arr1, char arr1_size, char* arr2, char mod, char amount)
 		arr1[i] ^= arr2[modulo((i + amount), mod)];
 }
 
+void CalcEncryptedIV(char* IV, std::string password) {
+	char* Hashed_IV = (char*)hexstr_to_char(sw::sha512::calculate(IV).c_str());
+	XOR(Hashed_IV,64, (char*)hexstr_to_char(sw::sha512::calculate(password).c_str()),64,0);
+
+	for (int i = 0; i < 16; i++) {
+		IV[i] = Hashed_IV[i*4] ^ Hashed_IV[(i+1) * 4] ^ Hashed_IV[(i+2) * 4] ^ Hashed_IV[(i + 3) * 4];
+	}
+	//std::cout << Hashed_IV << std::endl;
+}
+
 unsigned modulo(int value, unsigned m) {
 	int mod = value % (int)m;
 	if (mod < 0) {
@@ -275,6 +285,11 @@ int main(int argc, char** argv)
 	}
 
 	std::string password(argv[1]);
+
+	CalcEncryptedIV(IV, password);
+
+	//std::cout << IV << std::endl;
+
 	keys = get_gates(generate_key(password)); //generate keys from password
 	uint8_t* lHash = generate_lHash(keys.bitKey128); //generate lHash
 	char security_level = strtol(argv[3], NULL, 10); //Level of security
