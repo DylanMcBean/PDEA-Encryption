@@ -9,5 +9,5 @@ To run the algorithm from the terminal you would run it like "*C:>Encryption.exe
 - **-r**: this is optional, this will remove the old file when encrypting/decrypting
 
 
-##Encryption Layout (ROUGH)
+## Encryption Layout (ROUGH)
 ![encryption layout image](https://i.ibb.co/BP1rBvD/Encryption-Algorithm.png)
