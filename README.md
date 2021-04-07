@@ -9,4 +9,4 @@ To run the algorithm from the terminal you would run it like "*C:>Encryption.exe
 
 
 ##Encryption Layout (ROUGH)
-![encryption layout image](https://ibb.co/g7nPJQ1)
+![encryption layout image](https://i.ibb.co/BP1rBvD/Encryption-Algorithm.png)
