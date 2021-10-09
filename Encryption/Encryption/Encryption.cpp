@@ -411,9 +411,9 @@ int main(int argc, char** argv)
 	int security_level = 1;
 	char byte_array[] = "this is a test";
 
-	char* out_array = mainLoop(true,password,security_level,byte_array,14);
+	char* out_array = mainLoop(true,password,security_level,byte_array,14); //14 indicates the length of the input byte_array 'this is a test'
 	std::cout << out_array << std::endl;
 
-	out_array = mainLoop(false, password, security_level, out_array, 152);
+	out_array = mainLoop(false, password, security_level, out_array, 152); //152 indicates the size of the out_array (this can change, smallest will be 152. increases in sizes of 72 each size)
 	std::cout << out_array << std::endl;
 }
