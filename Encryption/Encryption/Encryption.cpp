@@ -406,7 +406,7 @@ char* mainLoop(bool encrypting, char* password, char security_level, char* byte_
 
 int main(int argc, char** argv)
 {
-
+	//this is just test data just now, this would get passed in from another file.
 	char password[] = "password";
 	int security_level = 1;
 	char byte_array[] = "this is a test";
