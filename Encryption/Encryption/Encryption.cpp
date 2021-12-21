@@ -1,11 +1,17 @@
+#define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <bitset>
 #include <chrono>
 #include <stdlib.h>
+#include <filesystem>
+#include <corecrt_wstring.h>
+#include <codecvt>
+#include <immintrin.h>
 #include "sha-512.h"
 
+namespace fs = std::filesystem;
 
 uint8_t* generate_key(std::string);
 uint8_t* hexstr_to_char(const char*);
@@ -197,32 +203,44 @@ char* inverse_matrix_manipulation(uint8_t* gates, char* data_bytes)
 }
 
 char rotate_temp_buffer[block_size_bytes];
-void rotate_left(char* data, int amount)
-{
-	int byteshift = amount / 8;
-	int bitshift = amount % 8;
-	for (int i = 0; i < block_size_bytes; i++) {
-		unsigned char byte1 = data[(i + byteshift) % block_size_bytes];
-		unsigned char byte2 = data[(i + byteshift + 1) % block_size_bytes];
-		unsigned char shift1 = byte1 << bitshift;
-		unsigned char shift2 = byte2 >> (8 - bitshift);
-		rotate_temp_buffer[i] = shift1 | shift2;
+void rotl_simd_64(char* data, int amount) {
+	int n_bytes = amount / 8;
+	int n_bits = amount % 8;
+
+	if (n_bits != 0) {
+		uint64_t tail = _loadbe_i64(data + 64);
+		uint64_t carry = tail >> (64 - n_bits);
+		for (int i = 1; i < 9; i++) {
+			uint64_t value = _loadbe_i64(data + 8 * (8 - i));
+			uint64_t value_rotated = (value << n_bits) | carry;
+			carry = value >> (64 - n_bits);
+			_storebe_i64(data + 8 * (8 - i), value_rotated);
+		}
+		tail = (tail << n_bits) | carry;
+		_storebe_i64(data + 64, tail);
 	}
-	memcpy(data, rotate_temp_buffer, block_size_bytes);
+
+	if (n_bytes) std::rotate(data, data + n_bytes, data + 72);
 }
 
-void rotate_right(char* data, int amount)
-{
-	int byteshift = amount / 8;
-	int bitshift = amount % 8;
-	for (int i = 0; i < block_size_bytes; i++) {
-		unsigned char byte1 = data[(block_size_bytes + (i - byteshift)) % block_size_bytes];
-		unsigned char byte2 = data[(block_size_bytes + (i - byteshift - 1)) % block_size_bytes];
-		unsigned char shift1 = byte1 >> bitshift;
-		unsigned char shift2 = byte2 << (8 - bitshift);
-		rotate_temp_buffer[i] = shift1 | shift2;
+void rotr_simd_64(char* data, int amount) {
+	int n_bytes = amount / 8;
+	int n_bits = amount % 8;
+
+	if (n_bits != 0) {
+		uint64_t head = _loadbe_i64(data);
+		uint64_t carry = head << (64 - n_bits);
+		for (int i = 1; i < 9; i++) {
+			uint64_t value = _loadbe_i64(data + 64 - (8 * (8 - i)));
+			uint64_t value_rotated = (value >> n_bits) | carry;
+			carry = value << (64 - n_bits);
+			_storebe_i64(data + 64 - (8 * (8 - i)), value_rotated);
+		}
+		head = (head >> n_bits) | carry;
+		_storebe_i64(data, head);
 	}
-	memcpy(data, rotate_temp_buffer, block_size_bytes);
+
+	if (n_bytes) std::rotate(data, data + (72 - n_bytes), data + 72);
 }
 
 void XOR(char* arr1, char arr1_size, char* arr2, char mod, char amount)
@@ -232,7 +250,7 @@ void XOR(char* arr1, char arr1_size, char* arr2, char mod, char amount)
 }
 
 void CalcEncodedIV(char* IV, std::string password) {
-	char* Hashed_IV = (char*)hexstr_to_char(sw::sha512::calculate(std::string(IV,IV+16)).c_str());
+	char* Hashed_IV = (char*)hexstr_to_char(sw::sha512::calculate(std::string(IV, IV + 16)).c_str());
 	XOR(Hashed_IV, 64, (char*)hexstr_to_char(sw::sha512::calculate(password).c_str()), 64, 0);
 	memcpy(IV, Hashed_IV, 16);
 }
@@ -255,165 +273,244 @@ inline bool file_exsists(const std::string& name) {
 	}
 }
 
-void encrypt(char* data, char* last_data, char* sentence, char* last_sentence, char* IV, char security_level, int block_amount, keys_struct keys, uint8_t* lHash) {
-	memcpy(data, sentence, block_size_bytes);
-	if (block_amount == 0) {
-		XOR(sentence, block_size_bytes, IV, 16, 0);
-	}
-	else {
-		XOR(last_data, block_size_bytes, last_sentence, block_size_bytes, block_amount);
-		XOR(sentence, block_size_bytes, last_data, block_size_bytes, block_amount);
-	}
-	//Block Cipher
-	for (int i = 0; i < 4; i++) {
-		int test = std::floor((fmax((1 << (security_level - 1)), keys.bitKeyPermutationAmounts[i] % (1 << security_level)) / fmax(1, (float)(security_level >> 1))));
-		for (int j = 0; j < std::floor((fmax((1 << (security_level - 1)), keys.bitKeyPermutationAmounts[i] % (1 << security_level)) / fmax(1, (float)(security_level >> 1)))); j++)
-		{
-			memcpy(sentence, substitution(sentence), block_size_bytes);
-			memcpy(sentence, matrix_manipulation((uint8_t*)keys.bitKeyGates[i], sentence), block_size_bytes);
-			rotate_left(sentence, (2 * i) + 2 + (unsigned char)lHash[block_amount % 256]);
-		}
-	}
-	memcpy(last_sentence, sentence, block_size_bytes);
-	memcpy(last_data, data, block_size_bytes);
-}
-
-void decrypt(char* data, char* last_data, char* sentence, char* last_sentence, char* IV, char security_level, int block_amount, keys_struct keys, uint8_t* lHash) {
-	memcpy(data, sentence, block_size_bytes);
-	//Block Cipher
-	for (int i = 3; i >= 0; i--) {
-		for (int j = 0; j < std::floor((fmax((1 << (security_level - 1)), keys.bitKeyPermutationAmounts[i] % (1 << security_level)) / fmax(1, (float)(security_level >> 1)))); j++)
-		{
-			rotate_right(sentence, (2 * i) + 2 + (unsigned char)lHash[block_amount % 256]);
-			memcpy(sentence, inverse_matrix_manipulation((uint8_t*)keys.bitKeyGates[i], sentence), block_size_bytes);
-			memcpy(sentence, inverse_substitution(sentence), block_size_bytes);
-		}
-	}
-	if (block_amount == 0)
-		XOR(sentence, block_size_bytes, IV, 16, 0);
-	else {
-		XOR(last_data, block_size_bytes, last_sentence, block_size_bytes, block_amount);
-		XOR(sentence, block_size_bytes, last_data, block_size_bytes, block_amount);
-	}
-	memcpy(last_sentence, data, block_size_bytes);
-	memcpy(last_data, sentence, block_size_bytes);
-}
-
-char* mainLoop(bool encrypting, char* password, char security_level, char* byte_array, int array_length) {
-	int block_amount = -1;
-	int bytes_read = 0;
-	int total_blocks = encrypting ? ceil((array_length + 1) / (float)block_size_bytes) : ((array_length - 80) / block_size_bytes);
-	char extra_data = encrypting ? block_size_bytes - (array_length % block_size_bytes) : 0;
-	size_t buffer_size = fmin(65536, total_blocks) * block_size_bytes;
-	char* buffer = new char[buffer_size];
-	char sentence[block_size_bytes];
-	char* output_array = new char[total_blocks * block_size_bytes + (encrypting ? 80 : 0)];
-
-	keys_struct keys;
-	char* IV = Generate_IV();//Generate Initialization Vector
-	char CheckHash[64];
-	std::string IV_string(IV);
-
-	//If encrypting write the salt to the file, if decrypting retrieve the salt from the file
-	if (encrypting) {
-		memcpy(output_array, IV, 16);
-	}
-	else {
-		memcpy(IV, byte_array, 16);
-		memcpy(CheckHash, byte_array + 16, 64);
-	}
-
-	CalcEncodedIV(IV, password);
-
-	keys = get_gates(generate_key(password)); //generate keys from password
-	uint8_t* lHash = generate_lHash(keys.bitKey128); //generate lHash
-
-	bytes_read = 0;
-	char data[block_size_bytes];
-	char last_sentence[block_size_bytes];
-	char last_data[block_size_bytes];
-	memcpy(buffer, byte_array + (encrypting ? 0 : 80), buffer_size); //.read(buffer, buffer_size);//read block from file
-	while (block_amount < (total_blocks - 1))
-	{
-		//Reload the buffer if needed
-		if (bytes_read > 4718552) {
-			bytes_read = 0;
-			memcpy(buffer, byte_array, buffer_size);//read block from file
-		}
-
-		if (block_amount == -1 && encrypting)
-		{
-			data[0] = { extra_data };
-			memcpy(data + 1, buffer, 71);
-			memcpy(sentence, data, block_size_bytes);
-			//Write the CheckHash to the file
-			memcpy(output_array + 16, sw::sha512::calculate(std::string(data + 1, data + block_size_bytes)).c_str(), 64);
-			bytes_read += 71;
-		}
-		else
-		{
-			memcpy(sentence, buffer + bytes_read, block_size_bytes);
-
-			if ((bytes_read + block_size_bytes) - array_length < block_size_bytes) {
-				int num = (bytes_read + block_size_bytes) - array_length;
-				for (int i = block_size_bytes - num; i < block_size_bytes; i++) {
-					sentence[i] = extra_data;
-				}
-			}
-			bytes_read += block_size_bytes;
-		}
-		block_amount++;
-		if (encrypting)
-		{
-			encrypt(data, last_data, sentence, last_sentence, IV, security_level, block_amount, keys, lHash);
-		}
-		else
-		{
-			decrypt(data, last_data, sentence, last_sentence, IV, security_level, block_amount, keys, lHash);
-		}
-
-		//END
-		if (!encrypting && block_amount == 0)
-		{
-			extra_data = sentence[0];
-			//Check if CheckHash matches
-			if (std::memcmp(CheckHash, sw::sha512::calculate(std::string(sentence + 1, sentence + block_size_bytes)).c_str(), 64) != 0) {
-				std::cout << "Incorrect Details" << std::endl;
-				return NULL;
-			}
-
-			if (!encrypting && block_amount == total_blocks - 1)
-			{
-				memcpy(output_array + (block_size_bytes * block_amount), sentence + 1, fmin(block_size_bytes, block_size_bytes - (total_blocks == 1 ? extra_data : extra_data - 1)));
-			}
-			else
-			{
-				memcpy(output_array + (block_size_bytes * block_amount), sentence + 1, 71);
-			}
-		}
-		else if (!encrypting && block_amount == total_blocks - 1)
-		{
-			memcpy(output_array + (block_size_bytes * block_amount) - 1, sentence, fmin(block_size_bytes, block_size_bytes - (extra_data - 1)));
-		}
-		else
-		{
-			memcpy(output_array + (encrypting ? 80 : -1) + (block_size_bytes * block_amount), sentence, block_size_bytes);
-		}
-	}
-	return output_array;
-}
-
-
 int main(int argc, char** argv)
 {
-	//this is just test data just now, this would get passed in from another file.
-	char password[] = "password";
-	int security_level = 1;
-	char byte_array[] = "this is a test";
+	bool encrypting;
+	//check if correct args
+	if (argc < 5) {
+		std::cout << "Incorrect Auguments, Try: Encryption.exe [password] [encryption] [security] [file_path] [-d].\n\n"
+			<< "Password (string)\n"
+			<< "Encrypting (string: true/false)\n"
+			<< "Security Level (int)\n"
+			<< "File Name (string). without siffix .pdea\n"
+			<< "-d Delete original file, not needed if you want to keep original file.";
+		return -1;
+	}
 
-	char* out_array = mainLoop(true,password,security_level,byte_array,14); //14 indicates the length of the input byte_array 'this is a test'
-	std::cout << out_array << std::endl;
+	std::istringstream(argv[2]) >> std::boolalpha >> encrypting;
 
-	out_array = mainLoop(false, password, security_level, out_array, 152); //152 indicates the size of the out_array (this can change, smallest will be 152. increases in sizes of 72 each size)
-	std::cout << out_array << std::endl;
+	std::filesystem::path cwd = std::filesystem::current_path() / argv[4];
+
+	std::wstring_convert<std::codecvt_utf8<wchar_t>> formatConvert;
+	std::wstring rootDirectoryW = formatConvert.from_bytes(cwd.string());
+
+	bool isDirectory = true;
+	// check if the rootDirectory is a diretory location or a file
+	try { fs::recursive_directory_iterator tester(L"\\\\?\\" + rootDirectoryW); }
+	catch (const std::exception& e) { isDirectory = false; }
+
+	//loop through entire directory and either encrypt whole directory or only specific file if only that path was selected
+
+	if (!isDirectory)
+	{
+		int lastIndex = rootDirectoryW.find_last_of('\\');
+		rootDirectoryW = rootDirectoryW.substr(0, lastIndex);
+	}
+
+	fs::recursive_directory_iterator iter(L"\\\\?\\" + rootDirectoryW, std::filesystem::directory_options::skip_permission_denied);
+	fs::recursive_directory_iterator end;
+
+	while (iter != end)
+	{
+		//std::filesystem::equivalent(const std::filesystem::path& p1, const filesystem::path& p2 );
+		std::filesystem::path a = argv[4];
+		std::filesystem::path b = iter->path();
+
+		if ((iter->is_regular_file() && isDirectory) || (iter->is_regular_file() && !isDirectory && std::filesystem::equivalent(a, b))) {
+			if ((encrypting && b.extension() == ".pdea") || (!encrypting && b.extension() != ".pdea"))
+			{
+				iter++;
+				continue;
+			}
+
+			std::cout << "Working on " << b.relative_path();
+
+			std::string first_file = encrypting ? iter->path().string() : iter->path().string().replace(iter->path().string().length() - 5, 5, ""); //Unencrypted File Name
+			std::string second_file = first_file + ".pdea"; //Encrypted File Name
+
+			//Check if file exsists
+			if (!file_exsists(encrypting ? first_file : second_file)) {
+				std::cout << "File: " << argv[4] << " doesnt appear to exist." << std::endl;
+				return -1;
+			}
+
+			//Load File
+			try {
+				std::ifstream bytes_file(encrypting ? first_file : second_file, std::ios_base::binary);
+				bytes_file.seekg(0, std::ios::end);
+				size_t length = bytes_file.tellg();
+				bytes_file.seekg(0, std::ios::beg);
+				int block_amount = -1;
+				int bytes_read = 0;
+				int total_blocks = encrypting ? ceil((length + 1) / (float)block_size_bytes) : ((length - 80) / block_size_bytes);
+				char extra_data = encrypting ? block_size_bytes - (length % block_size_bytes) : 0;
+				size_t buffer_size = fmin(65536, total_blocks) * block_size_bytes;
+				char* buffer = new char[buffer_size];
+				std::fstream ofs(encrypting ? second_file : first_file, std::fstream::out | std::fstream::trunc);
+				ofs.close();
+				auto append_file = std::fopen(std::string(encrypting ? second_file : first_file).c_str(), "wb");
+				char sentence[block_size_bytes];
+
+				keys_struct keys;
+				char* IV = Generate_IV();//Generate Initialization Vector
+				char CheckHash[64];
+				std::string IV_string(IV);
+
+				//If encrypting write the salt to the file, if decrypting retrieve the salt from the file
+				if (encrypting) {
+					fwrite(IV, 1, 16, append_file);
+				}
+				else {
+					bytes_file.read(buffer, 16);
+					memcpy(IV, buffer, 16);
+					bytes_file.read(buffer, 64);
+					memcpy(CheckHash, buffer, 64);
+				}
+
+				std::string password(argv[1]);
+
+				CalcEncodedIV(IV, argv[1]);
+
+				keys = get_gates(generate_key(password)); //generate keys from password
+				uint8_t* lHash = generate_lHash(keys.bitKey128); //generate lHash
+				char security_level = strtol(argv[3], NULL, 10); //Level of security
+
+				//Start Timing Here
+				auto start = std::chrono::high_resolution_clock::now();
+
+				bytes_read = 0;
+				char data[block_size_bytes];
+				char last_sentence[block_size_bytes];
+				char last_data[block_size_bytes];
+				if (total_blocks > 65536 && encrypting)
+					bytes_file.read(buffer, buffer_size - 1);//read block from file
+				else
+					bytes_file.read(buffer, buffer_size);//read block from file
+
+				while (block_amount < (total_blocks - 1))
+				{
+					//Reload the buffer if needed
+					if (bytes_read >= 4718591) {
+						bytes_read = 0;
+						bytes_file.read(buffer, buffer_size); //read block from file
+					}
+
+					if (block_amount == -1 && encrypting)
+					{
+						data[0] = { extra_data };
+						memcpy(data + 1, buffer, 71);
+						memcpy(sentence, data, block_size_bytes);
+						//Write the CheckHash to the file
+						fwrite(hexstr_to_char(sw::sha512::calculate(std::string(data + 1, data + block_size_bytes)).c_str()), 1, 64, append_file);
+						bytes_read += 71;
+					}
+					else
+					{
+						memcpy(sentence, buffer + bytes_read, block_size_bytes);
+
+						if ((bytes_read + block_size_bytes) - length < block_size_bytes) {
+							char num = (bytes_read + block_size_bytes) - length;
+							for (int i = block_size_bytes - num; i < block_size_bytes; i++) {
+								sentence[i] = extra_data;
+							}
+						}
+						bytes_read += block_size_bytes;
+					}
+					block_amount++;
+					if (encrypting)
+					{
+						memcpy(data, sentence, block_size_bytes);
+						if (block_amount == 0) {
+							XOR(sentence, block_size_bytes, IV, 16, 0);
+						}
+						else {
+							XOR(last_data, block_size_bytes, last_sentence, block_size_bytes, block_amount);
+							XOR(sentence, block_size_bytes, last_data, block_size_bytes, block_amount);
+						}
+
+						//Block Cipher
+						for (int i = 0; i < 4; i++) {
+							for (int j = 0; j < std::floor((fmax((1 << (security_level - 1)), keys.bitKeyPermutationAmounts[i] % (1 << security_level)) / fmax(1, (float)(security_level >> 1)))); j++)
+							{
+								memcpy(sentence, substitution(sentence), block_size_bytes);
+								memcpy(sentence, matrix_manipulation((uint8_t*)keys.bitKeyGates[i], sentence), block_size_bytes);
+								rotl_simd_64(sentence, (2 * i) + 2 + (unsigned char)lHash[block_amount % 256]);
+							}
+						}
+						memcpy(last_sentence, sentence, block_size_bytes);
+						memcpy(last_data, data, block_size_bytes);
+					}
+					else
+					{
+						memcpy(data, sentence, block_size_bytes);
+
+						//Block Cipher
+						for (int i = 3; i >= 0; i--) {
+							for (int j = 0; j < std::floor((fmax((1 << (security_level - 1)), keys.bitKeyPermutationAmounts[i] % (1 << security_level)) / fmax(1, (float)(security_level >> 1)))); j++)
+							{
+								rotr_simd_64(sentence, (2 * i) + 2 + (unsigned char)lHash[block_amount % 256]);
+								memcpy(sentence, inverse_matrix_manipulation((uint8_t*)keys.bitKeyGates[i], sentence), block_size_bytes);
+								memcpy(sentence, inverse_substitution(sentence), block_size_bytes);
+							}
+						}
+						if (block_amount == 0)
+							XOR(sentence, block_size_bytes, IV, 16, 0);
+						else {
+							XOR(last_data, block_size_bytes, last_sentence, block_size_bytes, block_amount);
+							XOR(sentence, block_size_bytes, last_data, block_size_bytes, block_amount);
+						}
+						memcpy(last_sentence, data, block_size_bytes);
+						memcpy(last_data, sentence, block_size_bytes);
+					}
+					if (!encrypting && block_amount == 0)
+					{
+						extra_data = sentence[0];
+
+						//Check if CheckHash matches
+						if (std::memcmp(CheckHash, hexstr_to_char(sw::sha512::calculate(std::string(sentence + 1, sentence + block_size_bytes)).c_str()), 64) != 0) {
+							std::cout << "Incorrect Details" << std::endl;
+							fclose(append_file);
+							remove(first_file.c_str());
+							return -1;
+						}
+
+						if (!encrypting && block_amount == total_blocks - 1)
+						{
+							fwrite(sentence + 1, 1, fmin(block_size_bytes, block_size_bytes - (total_blocks == 1 ? extra_data : extra_data - 1)), append_file);
+						}
+						else
+						{
+							fwrite(sentence + 1, 1, 71, append_file);
+						}
+					}
+					else if (!encrypting && block_amount == total_blocks - 1)
+					{
+						fwrite(sentence, 1, fmin(block_size_bytes, block_size_bytes - (extra_data - 1)), append_file);
+					}
+					else
+					{
+						fwrite(sentence, 1, block_size_bytes, append_file);
+					}
+				}
+
+				//End Timing Here
+				auto stop = std::chrono::high_resolution_clock::now();
+
+				//Get Time Difference
+				auto duration = duration_cast<std::chrono::microseconds>(stop - start);
+				std::cout << ", " << (encrypting ? "Encryption " : "Decryption ") << "took " << duration.count() << " microseconds." << std::endl;
+
+				//Delete Original file if flag is set
+				if (argc == 6 && std::strcmp(argv[5], "-d") == 0) {
+					bytes_file.close();
+					remove((encrypting ? first_file : second_file).c_str());
+				}
+				fclose(append_file);
+			}
+			catch (const std::exception& e) {
+				std::cout << ", Failed." << std::endl;
+			}
+		}
+		iter++;
+	}
 }
