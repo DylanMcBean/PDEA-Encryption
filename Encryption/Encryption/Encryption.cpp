@@ -497,8 +497,8 @@ int main(int argc, char** argv)
 				auto stop = std::chrono::high_resolution_clock::now();
 
 				//Get Time Difference
-				auto duration = duration_cast<std::chrono::microseconds>(stop - start);
-				std::cout << ", " << (encrypting ? "Encryption " : "Decryption ") << "took " << duration.count() << " microseconds." << std::endl;
+				auto duration = duration_cast<std::chrono::nanoseconds>(stop - start);
+				std::cout << ", " << (encrypting ? "Encryption " : "Decryption ") << "took " << duration.count() << " / " << (duration.count()/total_blocks) << " nanoseconds." << std::endl;
 
 				//Delete Original file if flag is set
 				if (argc == 6 && std::strcmp(argv[5], "-d") == 0) {
