@@ -1,4 +1,5 @@
 #define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
+#define _CRT_RAND_S
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -37,15 +38,6 @@ struct keys_struct {
 	uint8_t bitKeyPermutationAmounts[4];
 	uint8_t bitKeyGates[4][24];
 };
-
-static uint64_t rand_seed;
-
-uint64_t nextRand() {
-	uint64_t z = (rand_seed += 0x9e3779b97f4a7c15);
-	z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
-	z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
-	return z ^ (z >> 31);
-}
 
 uint8_t* generate_key(std::string password)
 {
@@ -101,10 +93,12 @@ uint8_t* generate_lHash(std::string* input_keys)
 
 char* Generate_IV()
 {
-	rand_seed = std::time(0);
+	unsigned int number = 0;
 	char* iv = new char[16];
-	for (int i = 0; i < 16; i++)
-		iv[i] = nextRand() % 256;
+	for (int i = 0; i < 16; i++) {
+		rand_s(&number);
+		iv[i] = (unsigned int)((double)number / ((double)UINT_MAX + 1) * 256.0) + 1;
+	}
 	return iv;
 }
 
@@ -498,7 +492,7 @@ int main(int argc, char** argv)
 
 				//Get Time Difference
 				auto duration = duration_cast<std::chrono::nanoseconds>(stop - start);
-				std::cout << ", " << (encrypting ? "Encryption " : "Decryption ") << "took " << duration.count() << " / " << (duration.count()/total_blocks) << " nanoseconds." << std::endl;
+				std::cout << ", " << (encrypting ? "Encryption " : "Decryption ") << "took " << duration.count() << " / " << (duration.count() / total_blocks) << " nanoseconds." << std::endl;
 
 				//Delete Original file if flag is set
 				if (argc == 6 && std::strcmp(argv[5], "-d") == 0) {
