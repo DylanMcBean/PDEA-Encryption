@@ -25,11 +25,13 @@ char* inverse_substitution(char*);
 char* matrix_manipulation(uint8_t*, char*);
 char* inverse_matrix_manipulation(uint8_t*, char*);
 
-void rotate_left(char*, int);
-void rotate_right(char*, int);
+void rotl_simd_64(char*, int);
+void rotr_simd_64(char*, int);
 
 void XOR(char*, char, char*, char, char);
 unsigned modulo(int value, unsigned m);
+
+int mainInner(int, char**);
 
 const uint8_t block_size_bytes = 72;
 
@@ -267,18 +269,53 @@ inline bool file_exsists(const std::string& name) {
 	}
 }
 
-int main(int argc, char** argv)
-{
+int contextMain(int argc, char** argv) {
+	std::string password, encryption, security, filepath, deleteFlag;
+
+	std::cout << "Enter Password: ";
+	std::cin >> password;
+
+	std::cout << "Enter Encryption (true / false): ";
+	std::cin >> encryption;
+
+	std::cout << "Enter Security Level (1 - 8): ";
+	std::cin >> security;
+
+	std::cout << "Set delet flag (y/n): ";
+	std::cin >> deleteFlag;
+
+	if (argc < 3) 
+	{
+		std::cout << "Enter Filepath: ";
+		std::cin >> filepath;
+	}
+	else 
+	{
+		filepath = argv[2];
+	}
+
+	char* args[] = {argv[0],(char*)password.c_str(),(char*)encryption.c_str(),(char*)security.c_str(),(char*)filepath.c_str(), (std::strcmp((char*)deleteFlag.c_str(),(char*)"y") ? (char*)"" : (char*)"-d")};
+
+	
+	return mainInner(6, (char**)args);
+}
+
+int mainInner(int argc, char** argv) {
 	bool encrypting;
 	//check if correct args
 	if (argc < 5) {
-		std::cout << "Incorrect Auguments, Try: Encryption.exe [password] [encryption] [security] [file_path] [-d].\n\n"
-			<< "Password (string)\n"
-			<< "Encrypting (string: true/false)\n"
-			<< "Security Level (int)\n"
-			<< "File Name (string). without siffix .pdea\n"
-			<< "-d Delete original file, not needed if you want to keep original file.";
-		return -1;
+		if (argc >= 2) {
+			contextMain(argc, argv);
+		}
+		else {
+			std::cout << "Incorrect Auguments, Try: Encryption.exe [password] [encryption] [security] [file_path] [-d].\n\n"
+				<< "Password (string)\n"
+				<< "Encrypting (string: true/false)\n"
+				<< "Security Level (int)\n"
+				<< "File Name (string). without siffix .pdea\n"
+				<< "-d Delete original file, not needed if you want to keep original file.";
+			return -1;
+		}
 	}
 
 	std::istringstream(argv[2]) >> std::boolalpha >> encrypting;
@@ -507,4 +544,9 @@ int main(int argc, char** argv)
 		}
 		iter++;
 	}
+}
+
+int main(int argc, char** argv)
+{
+	mainInner(argc, argv);
 }
