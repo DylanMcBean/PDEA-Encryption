@@ -1,16 +1,22 @@
-#include <iostream>
-#include <fstream>
-#include <vector>
+#include <algorithm>
+#include <array>
 #include <bitset>
 #include <chrono>
-#include <stdlib.h>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <fstream>
+#include <iostream>
+#include <vector>
+
 #include "../include/sha-512.h"
 
 uint8_t *generate_key(std::string);
 uint8_t *hexstr_to_char(const char *);
 uint8_t *generate_lHash(std::string *);
-std::vector<char> get_gate_indexs(std::string);
+std::array<uint8_t, 24> get_gate_indexs(const std::string &);
 
 char *substitution(char *);
 char *inverse_substitution(char *);
@@ -21,8 +27,8 @@ char *inverse_matrix_manipulation(uint8_t *, char *);
 void rotate_left(char *, int);
 void rotate_right(char *, int);
 
-void XOR(char *, char, char *, char, char);
-unsigned modulo(int value, unsigned m);
+void XOR(char *arr1, int arr1_size, const char *arr2, int mod, int amount);
+int modulo(int value, int m);
 
 const uint8_t block_size_bytes = 72;
 
@@ -56,20 +62,27 @@ keys_struct get_gates(uint8_t *key)
 	{
 		keys.bitKey128[i].resize(16);
 		memcpy(&keys.bitKey128[i][0], key + i * 16, 16);
-		keys.bitKeyPermutationAmounts[i] = keys.bitKey128[i][15];
-		memcpy(keys.bitKeyGates[i], get_gate_indexs(keys.bitKey128[i]).data(), 24);
+		keys.bitKeyPermutationAmounts[i] = static_cast<uint8_t>(static_cast<unsigned char>(keys.bitKey128[i][15]));
+		const auto gates = get_gate_indexs(keys.bitKey128[i]);
+		memcpy(keys.bitKeyGates[i], gates.data(), gates.size());
 	}
 	return keys;
 }
 
-std::vector<char> get_gate_indexs(std::string bitKey)
+std::array<uint8_t, 24> get_gate_indexs(const std::string &bitKey)
 {
 	std::string binary_data;
-	std::vector<char> bitKeyGates(24);
-	for (std::size_t i = 0; i < bitKey.size() - 1; ++i)
-		binary_data.append(std::bitset<8>(bitKey.c_str()[i]).to_string());
-	for (size_t i = 0; i < 24; i++)
-		bitKeyGates[i] = std::bitset<5>(binary_data.substr(i * 5, 5)).to_ulong();
+	binary_data.reserve((bitKey.size() > 0 ? (bitKey.size() - 1) : 0U) * 8U);
+	std::array<uint8_t, 24> bitKeyGates{};
+	for (std::size_t i = 0; i + 1 < bitKey.size(); ++i)
+	{
+		const auto byte = static_cast<unsigned char>(bitKey[i]);
+		binary_data.append(std::bitset<8>(byte).to_string());
+	}
+	for (std::size_t i = 0; i < bitKeyGates.size(); i++)
+	{
+		bitKeyGates[i] = static_cast<uint8_t>(std::bitset<5>(binary_data.substr(i * 5, 5)).to_ulong());
+	}
 	return bitKeyGates;
 }
 
@@ -79,7 +92,11 @@ uint8_t *hexstr_to_char(const char *hexstr)
 	size_t final_len = len / 2;
 	uint8_t *chrs = (uint8_t *)malloc((final_len + 1) * sizeof(*chrs));
 	for (size_t i = 0, j = 0; j < final_len; i += 2, j++)
-		chrs[j] = (hexstr[i] % 32 + 9) % 25 * 16 + (hexstr[i + 1] % 32 + 9) % 25;
+	{
+		const int hi = (hexstr[i] % 32 + 9) % 25;
+		const int lo = (hexstr[i + 1] % 32 + 9) % 25;
+		chrs[j] = static_cast<uint8_t>((hi * 16) + lo);
+	}
 	chrs[final_len] = '\0';
 	return chrs;
 }
@@ -98,10 +115,10 @@ uint8_t *generate_lHash(std::string *input_keys)
 
 char *Generate_IV()
 {
-	rand_seed = std::time(0);
+	rand_seed = static_cast<uint64_t>(std::time(nullptr));
 	char *iv = new char[16];
 	for (int i = 0; i < 16; i++)
-		iv[i] = nextRand() % 256;
+		iv[i] = static_cast<char>(nextRand() % 256);
 	return iv;
 }
 
@@ -145,14 +162,14 @@ char subtitution_data[block_size_bytes];
 char *substitution(char *data_bytes)
 {
 	for (int i = 0; i < block_size_bytes; i++)
-		subtitution_data[i] = substitution_table[(uint8_t)data_bytes[i]];
+		subtitution_data[i] = static_cast<char>(substitution_table[static_cast<uint8_t>(data_bytes[i])]);
 	return subtitution_data;
 }
 
 char *inverse_substitution(char *data_bytes)
 {
 	for (int i = 0; i < block_size_bytes; i++)
-		subtitution_data[i] = inverse_substitution_table[(uint8_t)data_bytes[i]];
+		subtitution_data[i] = static_cast<char>(inverse_substitution_table[static_cast<uint8_t>(data_bytes[i])]);
 	return subtitution_data;
 }
 
@@ -174,7 +191,11 @@ char *matrix_manipulation(uint8_t *gates, char *data_bytes)
 	{
 		matrix m = matrices[gates[i]];
 		for (int j = 0; j < 3; j++)
-			new_data_bytes_seperated[i][abs(m.order_signs[j]) - 1] = data_bytes_seperated[i][j] * (-1 + (int)(m.order_signs[j] >= 0) * 2);
+		{
+			const int sign = (m.order_signs[j] >= 0) ? 1 : -1;
+			const int value = static_cast<int>(data_bytes_seperated[i][j]) * sign;
+			new_data_bytes_seperated[i][abs(m.order_signs[j]) - 1] = static_cast<uint8_t>(value);
+		}
 	}
 	memcpy(return_bytes_buffer, new_data_bytes_seperated, block_size_bytes);
 	return return_bytes_buffer;
@@ -187,7 +208,11 @@ char *inverse_matrix_manipulation(uint8_t *gates, char *data_bytes)
 	{
 		matrix m = matrices[matrices[gates[i]].inverse_index];
 		for (int j = 0; j < 3; j++)
-			new_data_bytes_seperated[i][abs(m.order_signs[j]) - 1] = data_bytes_seperated[i][j] * (-1 + (int)(m.order_signs[j] >= 0) * 2);
+		{
+			const int sign = (m.order_signs[j] >= 0) ? 1 : -1;
+			const int value = static_cast<int>(data_bytes_seperated[i][j]) * sign;
+			new_data_bytes_seperated[i][abs(m.order_signs[j]) - 1] = static_cast<uint8_t>(value);
+		}
 	}
 	memcpy(return_bytes_buffer, new_data_bytes_seperated, block_size_bytes);
 	return return_bytes_buffer;
@@ -200,11 +225,11 @@ void rotate_left(char *data, int amount)
 	int bitshift = amount % 8;
 	for (int i = 0; i < block_size_bytes; i++)
 	{
-		unsigned char byte1 = data[(i + byteshift) % block_size_bytes];
-		unsigned char byte2 = data[(i + byteshift + 1) % block_size_bytes];
-		unsigned char shift1 = byte1 << bitshift;
-		unsigned char shift2 = byte2 >> (8 - bitshift);
-		rotate_temp_buffer[i] = shift1 | shift2;
+		const auto byte1 = static_cast<uint8_t>(static_cast<unsigned char>(data[(i + byteshift) % block_size_bytes]));
+		const auto byte2 = static_cast<uint8_t>(static_cast<unsigned char>(data[(i + byteshift + 1) % block_size_bytes]));
+		const auto shift1 = static_cast<uint8_t>(byte1 << bitshift);
+		const auto shift2 = static_cast<uint8_t>(byte2 >> (8 - bitshift));
+		rotate_temp_buffer[i] = static_cast<char>(shift1 | shift2);
 	}
 	memcpy(data, rotate_temp_buffer, block_size_bytes);
 }
@@ -215,19 +240,19 @@ void rotate_right(char *data, int amount)
 	int bitshift = amount % 8;
 	for (int i = 0; i < block_size_bytes; i++)
 	{
-		unsigned char byte1 = data[(block_size_bytes + (i - byteshift)) % block_size_bytes];
-		unsigned char byte2 = data[(block_size_bytes + (i - byteshift - 1)) % block_size_bytes];
-		unsigned char shift1 = byte1 >> bitshift;
-		unsigned char shift2 = byte2 << (8 - bitshift);
-		rotate_temp_buffer[i] = shift1 | shift2;
+		const auto byte1 = static_cast<uint8_t>(static_cast<unsigned char>(data[(block_size_bytes + (i - byteshift)) % block_size_bytes]));
+		const auto byte2 = static_cast<uint8_t>(static_cast<unsigned char>(data[(block_size_bytes + (i - byteshift - 1)) % block_size_bytes]));
+		const auto shift1 = static_cast<uint8_t>(byte1 >> bitshift);
+		const auto shift2 = static_cast<uint8_t>(byte2 << (8 - bitshift));
+		rotate_temp_buffer[i] = static_cast<char>(shift1 | shift2);
 	}
 	memcpy(data, rotate_temp_buffer, block_size_bytes);
 }
 
-void XOR(char *arr1, char arr1_size, char *arr2, char mod, char amount)
+void XOR(char *arr1, int arr1_size, const char *arr2, int mod, int amount)
 {
 	for (int i = 0; i < arr1_size; i++)
-		arr1[i] ^= arr2[modulo((i + amount), mod)];
+		arr1[i] ^= arr2[modulo(i + amount, mod)];
 }
 
 void CalcEncodedIV(char *IV, std::string password)
@@ -237,9 +262,11 @@ void CalcEncodedIV(char *IV, std::string password)
 	memcpy(IV, Hashed_IV, 16);
 }
 
-unsigned modulo(int value, unsigned m)
+int modulo(int value, int m)
 {
-	int mod = value % (int)m;
+	if (m <= 0)
+		return 0;
+	int mod = value % m;
 	if (mod < 0)
 	{
 		mod += m;
@@ -314,9 +341,11 @@ char *mainLoop(bool encrypting, char *password, char security_level, char *byte_
 {
 	int block_amount = -1;
 	int bytes_read = 0;
-	int total_blocks = encrypting ? ceil((array_length + 1) / (float)block_size_bytes) : ((array_length - 80) / block_size_bytes);
-	char extra_data = encrypting ? block_size_bytes - (array_length % block_size_bytes) : 0;
-	size_t buffer_size = fmin(65536, total_blocks) * block_size_bytes;
+	const int blockSize = static_cast<int>(block_size_bytes);
+	const int total_blocks = encrypting ? ((array_length + 1 + (blockSize - 1)) / blockSize) : ((array_length - 80) / blockSize);
+	uint8_t extra_data = encrypting ? static_cast<uint8_t>(blockSize - (array_length % blockSize)) : static_cast<uint8_t>(0);
+	const int blocks_in_buffer = std::min(65536, total_blocks);
+	size_t buffer_size = static_cast<size_t>(blocks_in_buffer) * static_cast<size_t>(blockSize);
 	char *buffer = new char[buffer_size];
 	char sentence[block_size_bytes];
 	char *output_array = new char[total_blocks * block_size_bytes + (encrypting ? 80 : 0)];
@@ -358,7 +387,7 @@ char *mainLoop(bool encrypting, char *password, char security_level, char *byte_
 
 		if (block_amount == -1 && encrypting)
 		{
-			data[0] = {extra_data};
+			data[0] = static_cast<char>(extra_data);
 			memcpy(data + 1, buffer, 71);
 			memcpy(sentence, data, block_size_bytes);
 			// Write the CheckHash to the file
@@ -374,7 +403,7 @@ char *mainLoop(bool encrypting, char *password, char security_level, char *byte_
 				int num = (bytes_read + block_size_bytes) - array_length;
 				for (int i = block_size_bytes - num; i < block_size_bytes; i++)
 				{
-					sentence[i] = extra_data;
+					sentence[i] = static_cast<char>(extra_data);
 				}
 			}
 			bytes_read += block_size_bytes;
@@ -392,7 +421,7 @@ char *mainLoop(bool encrypting, char *password, char security_level, char *byte_
 		// END
 		if (!encrypting && block_amount == 0)
 		{
-			extra_data = sentence[0];
+			extra_data = static_cast<uint8_t>(static_cast<unsigned char>(sentence[0]));
 			// Check if CheckHash matches
 			if (std::memcmp(CheckHash, sw::sha512::calculate(std::string(sentence + 1, sentence + block_size_bytes)).c_str(), 64) != 0)
 			{
@@ -402,20 +431,26 @@ char *mainLoop(bool encrypting, char *password, char security_level, char *byte_
 
 			if (!encrypting && block_amount == total_blocks - 1)
 			{
-				memcpy(output_array + (block_size_bytes * block_amount), sentence + 1, fmin(block_size_bytes, block_size_bytes - (total_blocks == 1 ? extra_data : extra_data - 1)));
+				const int extra_i = static_cast<int>(extra_data);
+				const int limit = (total_blocks == 1) ? extra_i : (extra_i - 1);
+				const size_t copy_len = static_cast<size_t>(std::min(blockSize, blockSize - limit));
+				memcpy(output_array + (blockSize * block_amount), sentence + 1, copy_len);
 			}
 			else
 			{
-				memcpy(output_array + (block_size_bytes * block_amount), sentence + 1, 71);
+				memcpy(output_array + (blockSize * block_amount), sentence + 1, 71);
 			}
 		}
 		else if (!encrypting && block_amount == total_blocks - 1)
 		{
-			memcpy(output_array + (block_size_bytes * block_amount) - 1, sentence, fmin(block_size_bytes, block_size_bytes - (extra_data - 1)));
+			const int extra_i = static_cast<int>(extra_data);
+			const int limit = extra_i - 1;
+			const size_t copy_len = static_cast<size_t>(std::min(blockSize, blockSize - limit));
+			memcpy(output_array + (blockSize * block_amount) - 1, sentence, copy_len);
 		}
 		else
 		{
-			memcpy(output_array + (encrypting ? 80 : -1) + (block_size_bytes * block_amount), sentence, block_size_bytes);
+			memcpy(output_array + (encrypting ? 80 : -1) + (blockSize * block_amount), sentence, block_size_bytes);
 		}
 	}
 	return output_array;

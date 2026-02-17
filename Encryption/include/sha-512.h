@@ -111,7 +111,7 @@ namespace sw
              */
             void update(const void *data, size_t size)
             {
-                unsigned nb, n, n_tail;
+                size_t nb, n, n_tail;
                 const uint8_t *p;
                 n = 128 - sz_;
                 n_tail = size < n ? size : n;
@@ -129,7 +129,7 @@ namespace sw
                 n_tail = n & 0x7f;
                 memcpy(block_, &p[nb << 7], n_tail);
                 sz_ = n_tail;
-                iterations_ += (nb + 1) << 7;
+                iterations_ += static_cast<uint64_t>((nb + 1) << 7);
             }
 
             /**
@@ -151,7 +151,7 @@ namespace sw
     *((b) + 1) = (uint8_t)((x) >> 16); \
     *((b) + 0) = (uint8_t)((x) >> 24);
 #endif
-                unsigned nb, n;
+                size_t nb, n;
                 uint64_t n_total;
                 nb = 1 + ((0x80 - 17) < (sz_ & 0x7f));
                 n_total = (iterations_ + sz_) << 3;
@@ -298,7 +298,7 @@ namespace sw
         private:
             uint64_t iterations_; // Number of iterations
             uint64_t sum_[8];     // Intermediate checksum buffer
-            unsigned sz_;         // Number of currently stored bytes in the block
+            size_t sz_;           // Number of currently stored bytes in the block
             uint8_t block_[256];
             static const uint64_t lut_[80]; // Lookup table
         };
