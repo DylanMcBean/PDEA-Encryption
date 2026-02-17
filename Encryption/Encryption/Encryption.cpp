@@ -404,15 +404,42 @@ char* mainLoop(bool encrypting, char* password, char security_level, char* byte_
 
 int main(int argc, char** argv)
 {
-	char password[] = "password";
-	int security_level = 1;
-	char byte_array[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+	(void)argc;
+	(void)argv;
 
-	char* out_array = mainLoop(true, password, security_level, byte_array, 113);
-	for(int i = 0; i < 224; i ++) {
-		printf("%02x",out_array[i] & 0xff);
-	}	
+	std::string plaintext;
+	std::cout << "Enter text to encrypt: ";
+	std::getline(std::cin, plaintext);
 
-	out_array = mainLoop(false, password, security_level, out_array, 224);
-	std::cout << "\nDecoded: " << out_array << std::endl;
+	std::string password_str;
+	std::cout << "Password (leave empty for 'password'): ";
+	std::getline(std::cin, password_str);
+	if (password_str.empty()) {
+		password_str = "password";
+	}
+
+	std::vector<char> password_buf(password_str.begin(), password_str.end());
+	password_buf.push_back('\0');
+
+	const char security_level = 1;
+
+	std::vector<char> plaintext_buf(plaintext.begin(), plaintext.end());
+	const int plaintext_len = static_cast<int>(plaintext_buf.size());
+
+	const int total_blocks = (plaintext_len + 1 + (block_size_bytes - 1)) / block_size_bytes;
+	const int encrypted_len = total_blocks * block_size_bytes + 80;
+
+	char* encrypted = mainLoop(true, password_buf.data(), security_level, plaintext_buf.data(), plaintext_len);
+	std::cout << "\nCiphertext (hex): ";
+	for (int i = 0; i < encrypted_len; i++) {
+		printf("%02x", encrypted[i] & 0xff);
+	}
+
+	char* decrypted = mainLoop(false, password_buf.data(), security_level, encrypted, encrypted_len);
+	std::cout << "\nDecoded: ";
+	std::cout.write(decrypted, static_cast<std::streamsize>(plaintext.size()));
+	std::cout << std::endl;
+
+	delete[] encrypted;
+	delete[] decrypted;
 }

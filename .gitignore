@@ -1,0 +1,19 @@
+# Build output
+/build/
+
+# Common compiled artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Debug symbols
+*.pdb
+*.ilk
+
+# Misc
+*.log
